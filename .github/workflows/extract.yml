@@ -1,0 +1,48 @@
+
+name: Extract App Archive
+
+on:
+  workflow_dispatch:
+    inputs:
+      archive_url:
+        description: "Direct download URL for your IPA or ZIP"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download archive
+        env:
+          ARCHIVE_URL: ${{ inputs.archive_url }}
+        run: |
+          curl -fL --retry 2 "$ARCHIVE_URL" -o app.zip
+
+      - name: Extract archive
+        run: |
+          mkdir -p extracted-app
+          unzip -q app.zip -d archive
+          APP_DIR=$(find archive/Payload -maxdepth 1 -type d -name '*.app' -print -quit)
+
+          if [ -z "$APP_DIR" ]; then
+            echo "No .app bundle found inside Payload."
+            exit 1
+          fi
+
+          cp -R "$APP_DIR"/. extracted-app/
+
+      - name: Commit extracted files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add extracted-app
+          git commit -m "Extract app bundle" || echo "No changes to commit"
+          git push
