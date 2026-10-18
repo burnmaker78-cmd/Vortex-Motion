@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       archive_url:
-        description: "Direct download URL for your IPA or ZIP"
+        description: "Direct download URL for an archive you own"
         required: true
         type: string
 
@@ -24,16 +24,32 @@ jobs:
         env:
           ARCHIVE_URL: ${{ inputs.archive_url }}
         run: |
-          curl -fL --retry 2 "$ARCHIVE_URL" -o app.zip
+          set -e
+          curl -fLsS --retry 2 \
+            "$ARCHIVE_URL" \
+            -o app.zip
+
+          echo "Downloaded file information:"
+          file app.zip
+          ls -lh app.zip
+
+          if ! unzip -tq app.zip; then
+            echo "::error::The downloaded file is not a valid ZIP archive. Check the download URL."
+            exit 1
+          fi
 
       - name: Extract archive
         run: |
           mkdir -p extracted-app
           unzip -q app.zip -d archive
-          APP_DIR=$(find archive/Payload -maxdepth 1 -type d -name '*.app' -print -quit)
+
+          APP_DIR=$(find archive/Payload \
+            -maxdepth 1 -type d \
+            -name '*.app' \
+            -print -quit 2>/dev/null || true)
 
           if [ -z "$APP_DIR" ]; then
-            echo "No .app bundle found inside Payload."
+            echo "::error::No .app bundle found inside Payload."
             exit 1
           fi
 
@@ -42,7 +58,10 @@ jobs:
       - name: Commit extracted files
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add extracted-app
-          git commit -m "Extract app bundle" || echo "No changes to commit"
+          git commit -m "Extract app bundle" \
+            || echo "No changes to commit"
           git push
